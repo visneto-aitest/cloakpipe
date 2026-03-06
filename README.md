@@ -43,7 +43,13 @@ CloakPipe takes a different approach: **consistent pseudonymization**. The same 
 
 ## Quick Start
 
-### Install from source
+### Install from crates.io
+
+```bash
+cargo install cloakpipe-cli
+```
+
+### Or build from source
 
 ```bash
 git clone https://github.com/rohansx/cloakpipe.git
@@ -231,16 +237,15 @@ The vault ensures consistency: "Tata Motors" always maps to `ORG_7`, across docu
 
 ## Project Structure
 
-```
-crates/
-  cloakpipe-core/       Detection, pseudonymization, vault, rehydration
-  cloakpipe-proxy/      Axum HTTP proxy (chat completions + embeddings)
-  cloakpipe-cli/        CLI binary (start, test, stats, init)
-  cloakpipe-audit/      JSONL audit logging with daily rotation
-  cloakpipe-tree/       CloakTree: vectorless retrieval (planned)
-  cloakpipe-vector/     Distance-preserving vector encryption (planned)
-  cloakpipe-local/      Fully local RAG mode (planned)
-```
+| Crate | crates.io | Description |
+|-------|-----------|-------------|
+| [`cloakpipe-cli`](crates/cloakpipe-cli/) | [![crates.io](https://img.shields.io/crates/v/cloakpipe-cli?style=flat-square)](https://crates.io/crates/cloakpipe-cli) | CLI binary (`start`, `test`, `stats`, `init`) |
+| [`cloakpipe-core`](crates/cloakpipe-core/) | [![crates.io](https://img.shields.io/crates/v/cloakpipe-core?style=flat-square)](https://crates.io/crates/cloakpipe-core) | Detection, pseudonymization, vault, rehydration |
+| [`cloakpipe-proxy`](crates/cloakpipe-proxy/) | [![crates.io](https://img.shields.io/crates/v/cloakpipe-proxy?style=flat-square)](https://crates.io/crates/cloakpipe-proxy) | Axum HTTP proxy (chat completions + embeddings) |
+| [`cloakpipe-audit`](crates/cloakpipe-audit/) | [![crates.io](https://img.shields.io/crates/v/cloakpipe-audit?style=flat-square)](https://crates.io/crates/cloakpipe-audit) | JSONL audit logging with daily rotation |
+| [`cloakpipe-tree`](crates/cloakpipe-tree/) | [![crates.io](https://img.shields.io/crates/v/cloakpipe-tree?style=flat-square)](https://crates.io/crates/cloakpipe-tree) | CloakTree: vectorless retrieval (planned) |
+| [`cloakpipe-vector`](crates/cloakpipe-vector/) | [![crates.io](https://img.shields.io/crates/v/cloakpipe-vector?style=flat-square)](https://crates.io/crates/cloakpipe-vector) | Distance-preserving vector encryption (planned) |
+| [`cloakpipe-local`](crates/cloakpipe-local/) | [![crates.io](https://img.shields.io/crates/v/cloakpipe-local?style=flat-square)](https://crates.io/crates/cloakpipe-local) | Fully local RAG mode (planned) |
 
 ## Roadmap
 
