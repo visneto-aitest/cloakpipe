@@ -6,7 +6,7 @@
   <p align="center">
     <a href="https://github.com/rohansx/cloakpipe/actions"><img src="https://img.shields.io/github/actions/workflow/status/rohansx/cloakpipe/ci.yml?style=flat-square" alt="CI"></a>
     <a href="https://crates.io/crates/cloakpipe"><img src="https://img.shields.io/crates/v/cloakpipe?style=flat-square" alt="crates.io"></a>
-    <a href="https://github.com/rohansx/cloakpipe/blob/main/LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT%2FApache--2.0-blue?style=flat-square" alt="License"></a>
+    <a href="https://github.com/rohansx/cloakpipe/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License"></a>
   </p>
 </p>
 
@@ -289,9 +289,4 @@ RUST_LOG=debug cargo run -- start
 
 ## License
 
-Licensed under either of:
-
-- [MIT License](LICENSE-MIT)
-- [Apache License, Version 2.0](LICENSE-APACHE)
-
-at your option.
+This project is licensed under the [MIT License](LICENSE).
