@@ -9,6 +9,7 @@
 pub mod detector;
 pub mod replacer;
 pub mod vault;
+pub mod vault_sqlite;
 pub mod rehydrator;
 pub mod config;
 

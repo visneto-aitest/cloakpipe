@@ -62,6 +62,9 @@ thiserror = "2"
 # Document parsing
 lopdf = "0.34"
 
+# Database
+rusqlite = { version = "0.32", features = ["bundled"] }
+
 # UUID + time
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
