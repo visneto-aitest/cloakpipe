@@ -1,0 +1,18 @@
+[package]
+name = "cloakpipe-tree"
+version.workspace = true
+edition.workspace = true
+description = "CloakTree: Vectorless, reasoning-based retrieval with privacy-first tree indexing"
+
+[dependencies]
+cloakpipe-core = { path = "../cloakpipe-core" }
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+reqwest.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+lopdf.workspace = true

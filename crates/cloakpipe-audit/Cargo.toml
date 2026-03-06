@@ -1,0 +1,14 @@
+[package]
+name = "cloakpipe-audit"
+version.workspace = true
+edition.workspace = true
+description = "Structured audit logging for CloakPipe"
+
+[dependencies]
+cloakpipe-core = { path = "../cloakpipe-core" }
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+tracing.workspace = true
+anyhow.workspace = true

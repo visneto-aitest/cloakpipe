@@ -1,0 +1,8 @@
+[package]
+name = "cloakpipe-vector"
+version.workspace = true
+edition.workspace = true
+description = "Vector encryption (ADCPE) for CloakPipe — future scope"
+
+[dependencies]
+anyhow.workspace = true
