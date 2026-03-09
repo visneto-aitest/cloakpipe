@@ -8,3 +8,4 @@ pub mod server;
 pub mod handlers;
 pub mod state;
 pub mod streaming;
+pub mod tree_handlers;

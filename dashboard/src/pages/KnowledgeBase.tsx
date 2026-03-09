@@ -1,8 +1,9 @@
-import { useState, useRef, useCallback } from 'react'
-import { Database, Plus, FileText, Upload, Trash2, Search, Eye, Shield, ChevronRight, X, File, FileType, Zap, AlertCircle } from 'lucide-react'
+import { useState, useRef, useCallback, useEffect } from 'react'
+import { Database, Plus, FileText, Upload, Trash2, Search, Eye, Shield, ChevronRight, X, File, FileType, Zap, AlertCircle, TreePine, Loader2 } from 'lucide-react'
 import { usePowerSync, useQuery } from '@powersync/react'
 import { pseudonymize, createVault } from '../lib/cloakpipe'
 import { chunkText, detectPages, generateEmbeddings, type EmbeddingConfig } from '../lib/retrieval'
+import * as TreeAPI from '../lib/tree-api'
 
 interface KnowledgeBaseRow {
   id: string; name: string; description: string; document_count: number;
@@ -31,6 +32,13 @@ export function KnowledgeBase() {
   const [uploadStep, setUploadStep] = useState<'idle' | 'reading' | 'chunking' | 'pii' | 'embedding' | 'saving'>('idle')
   const [searchQuery, setSearchQuery] = useState('')
   const [dragOver, setDragOver] = useState(false)
+  const [treeIndexing, setTreeIndexing] = useState(false)
+  const [treeStatus, setTreeStatus] = useState('')
+  const [trees, setTrees] = useState<TreeAPI.TreeListItem[]>([])
+  const [selectedTree, setSelectedTree] = useState<TreeAPI.TreeIndex | null>(null)
+  const [treeQuery, setTreeQuery] = useState('')
+  const [treeAnswer, setTreeAnswer] = useState<TreeAPI.TreeQueryResult | null>(null)
+  const [treeSearching, setTreeSearching] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const { data: knowledgeBases } = useQuery<KnowledgeBaseRow>(
@@ -55,6 +63,19 @@ export function KnowledgeBase() {
   const { data: embedKeyRows } = useQuery<{ provider: string; api_key: string; model: string }>(
     `SELECT provider, api_key, model FROM embedding_keys ORDER BY created_at DESC LIMIT 1`
   )
+
+  const { data: proxyInstances } = useQuery<{ listen_addr: string }>(
+    `SELECT listen_addr FROM instances WHERE status = 'online' ORDER BY last_heartbeat DESC LIMIT 1`
+  )
+  const proxyUrl = proxyInstances?.[0]?.listen_addr
+    ? `http://${proxyInstances[0].listen_addr}`
+    : null
+
+  // Load tree indices when proxy is available
+  useEffect(() => {
+    if (!proxyUrl) { setTrees([]); return }
+    TreeAPI.listTrees(proxyUrl).then(setTrees).catch(() => setTrees([]))
+  }, [proxyUrl])
 
   const selectedKbData = (knowledgeBases || []).find(kb => kb.id === selectedKb)
   const stats = chunkStats?.[0]
@@ -193,6 +214,65 @@ export function KnowledgeBase() {
       `UPDATE knowledge_bases SET document_count = document_count - 1, chunk_count = chunk_count - ?, total_detections = total_detections - ?, updated_at = ? WHERE id = ?`,
       [doc.chunk_count, doc.detection_count, now, doc.kb_id]
     )
+  }
+
+  async function handleTreeIndex(doc: DocumentRow) {
+    if (!proxyUrl) return
+    setTreeIndexing(true)
+    setTreeStatus(`Building CloakTree index for ${doc.name}...`)
+    try {
+      // Read document content from db
+      const rows = await db.getAll<{ content: string }>(
+        `SELECT content FROM kb_documents WHERE id = ?`, [doc.id]
+      )
+      if (!rows.length) throw new Error('Document not found')
+
+      // Pseudonymize before sending to LLM
+      const vault = createVault()
+      const { output: pseudonymizedText } = pseudonymize(rows[0].content, vault)
+
+      const tree = await TreeAPI.indexText(proxyUrl, doc.name, pseudonymizedText)
+      setTreeStatus(`Tree built: ${tree.node_count} nodes, depth ${tree.max_depth}`)
+      setSelectedTree(tree)
+      // Refresh tree list
+      TreeAPI.listTrees(proxyUrl).then(setTrees).catch(() => {})
+    } catch (err) {
+      setTreeStatus(`Tree indexing failed: ${err}`)
+    } finally {
+      setTreeIndexing(false)
+    }
+  }
+
+  async function handleTreeQuery() {
+    if (!proxyUrl || !treeQuery.trim() || !selectedTree) return
+    setTreeSearching(true)
+    setTreeAnswer(null)
+    try {
+      // Pseudonymize query before sending
+      const vault = createVault()
+      const { output: pseudonymizedQuery } = pseudonymize(treeQuery, vault)
+
+      const result = await TreeAPI.queryTree(proxyUrl, {
+        tree_id: selectedTree.id,
+        query: pseudonymizedQuery,
+      })
+      setTreeAnswer(result)
+    } catch (err) {
+      setTreeAnswer({ answer: `Error: ${err}`, sources: [], tree_id: '', reasoning: '' })
+    } finally {
+      setTreeSearching(false)
+    }
+  }
+
+  async function handleDeleteTree(treeId: string) {
+    if (!proxyUrl) return
+    try {
+      await TreeAPI.deleteTree(proxyUrl, treeId)
+      setTrees(trees.filter(t => t.id !== treeId))
+      if (selectedTree?.id === treeId) setSelectedTree(null)
+    } catch (err) {
+      console.error('Delete tree failed:', err)
+    }
   }
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -547,8 +627,158 @@ export function KnowledgeBase() {
               )}
             </div>
 
+            {/* CloakTree panel */}
+            {proxyUrl && (
+              <div className="mx-5 mt-3">
+                <div className="bg-[var(--card)] border border-[var(--border)] p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <TreePine className="w-3.5 h-3.5 text-[var(--primary)]" />
+                      <h3 className="text-[11px] uppercase tracking-wider text-[var(--muted-foreground)]">CloakTree — Vectorless Retrieval</h3>
+                    </div>
+                    <span className="text-[10px] font-mono text-[var(--muted-foreground)]">{proxyUrl}</span>
+                  </div>
+
+                  {/* Tree indices list */}
+                  {trees.length > 0 && (
+                    <div className="space-y-1 mb-3">
+                      {trees.map(tree => (
+                        <div
+                          key={tree.id}
+                          className={`flex items-center justify-between px-3 py-1.5 cursor-pointer transition-colors ${
+                            selectedTree?.id === tree.id
+                              ? 'bg-[var(--primary)]/10 border border-[var(--primary)]/30'
+                              : 'bg-[var(--background)] border border-[var(--border)] hover:border-[var(--primary)]/30'
+                          }`}
+                          onClick={() => {
+                            if (selectedTree?.id === tree.id) { setSelectedTree(null); return }
+                            TreeAPI.getTree(proxyUrl!, tree.id).then(setSelectedTree).catch(() => {})
+                          }}
+                        >
+                          <div className="flex items-center gap-2">
+                            <TreePine className="w-3 h-3 text-[var(--primary)]" />
+                            <span className="text-[12px]">{tree.source}</span>
+                            <span className="text-[10px] font-mono text-[var(--muted-foreground)]">
+                              {tree.node_count} nodes · {tree.total_pages} pages
+                            </span>
+                          </div>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleDeleteTree(tree.id) }}
+                            className="p-0.5 text-[var(--destructive)] opacity-0 hover:opacity-100 group-hover:opacity-100"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Build tree from documents */}
+                  {(documents || []).length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mb-3">
+                      {(documents || []).map(doc => (
+                        <button
+                          key={doc.id}
+                          onClick={() => handleTreeIndex(doc)}
+                          disabled={treeIndexing}
+                          className="flex items-center gap-1 px-2 py-1 text-[11px] bg-[var(--background)] border border-[var(--border)] hover:border-[var(--primary)]/50 disabled:opacity-40"
+                        >
+                          <TreePine className="w-3 h-3" />
+                          Build tree: {doc.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Tree indexing status */}
+                  {treeStatus && (
+                    <div className="flex items-center gap-2 text-[11px] text-[var(--muted-foreground)] mb-3">
+                      {treeIndexing && <Loader2 className="w-3 h-3 animate-spin text-[var(--primary)]" />}
+                      {treeStatus}
+                    </div>
+                  )}
+
+                  {/* Navigation map */}
+                  {selectedTree && (
+                    <div className="mb-3">
+                      <h4 className="text-[10px] uppercase tracking-wider text-[var(--muted-foreground)] mb-1.5">Tree Structure</h4>
+                      <div className="max-h-40 overflow-auto bg-[var(--background)] border border-[var(--border)] p-2 space-y-0.5">
+                        {selectedTree.navigation.map(nav => (
+                          <div key={nav.id} className="flex items-center gap-1.5" style={{ paddingLeft: `${nav.depth * 12}px` }}>
+                            {nav.has_children && <ChevronRight className="w-2.5 h-2.5 text-[var(--muted-foreground)]" />}
+                            <span className="text-[11px]">{nav.title}</span>
+                            <span className="text-[9px] font-mono text-[var(--muted-foreground)]">
+                              pp. {nav.pages[0]}–{nav.pages[1]}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* CloakTree query */}
+                  {selectedTree && (
+                    <div>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={treeQuery}
+                          onChange={e => setTreeQuery(e.target.value)}
+                          placeholder="Ask a question about this document..."
+                          className="flex-1 px-3 py-1.5 bg-[var(--background)] border border-[var(--border)] text-[12px] focus:outline-none focus:border-[var(--primary)] placeholder:text-[var(--muted-foreground)]"
+                          onKeyDown={e => e.key === 'Enter' && handleTreeQuery()}
+                        />
+                        <button
+                          onClick={handleTreeQuery}
+                          disabled={treeSearching || !treeQuery.trim()}
+                          className="px-3 py-1.5 bg-[var(--primary)] text-white text-[12px] font-medium hover:opacity-90 disabled:opacity-40 flex items-center gap-1.5"
+                        >
+                          {treeSearching ? <Loader2 className="w-3 h-3 animate-spin" /> : <Search className="w-3 h-3" />}
+                          Query
+                        </button>
+                      </div>
+
+                      {/* Answer */}
+                      {treeAnswer && (
+                        <div className="mt-3 space-y-2">
+                          <div className="bg-[var(--background)] border border-[var(--border)] p-3">
+                            <h4 className="text-[10px] uppercase tracking-wider text-[var(--muted-foreground)] mb-1">Answer</h4>
+                            <p className="text-[12px] leading-relaxed whitespace-pre-wrap">{treeAnswer.answer}</p>
+                          </div>
+                          {treeAnswer.reasoning && (
+                            <div className="text-[10px] text-[var(--muted-foreground)]">
+                              <span className="font-medium">Reasoning:</span> {treeAnswer.reasoning}
+                            </div>
+                          )}
+                          {treeAnswer.sources.length > 0 && (
+                            <div>
+                              <h4 className="text-[10px] uppercase tracking-wider text-[var(--muted-foreground)] mb-1">Sources</h4>
+                              <div className="space-y-1">
+                                {treeAnswer.sources.map(src => (
+                                  <div key={src.node_id} className="px-2 py-1.5 bg-[var(--background)] border border-[var(--border)] text-[11px]">
+                                    <span className="font-medium">{src.title}</span>
+                                    <span className="text-[var(--muted-foreground)] ml-2">pp. {src.pages[0]}–{src.pages[1]}</span>
+                                    {src.text && <p className="text-[var(--muted-foreground)] mt-0.5 line-clamp-2">{src.text}</p>}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="mt-3 text-[10px] text-[var(--muted-foreground)]">
+                    <Shield className="w-3 h-3 inline mr-1 text-[var(--primary)]" />
+                    Documents are pseudonymized before CloakTree indexing — PII never reaches the LLM.
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* How it works footer */}
-            <div className="px-5 pb-4">
+            <div className="px-5 py-4">
               <div className="bg-[var(--card)] border border-[var(--border)] p-4">
                 <h3 className="text-[10px] uppercase tracking-wider text-[var(--muted-foreground)] mb-2">Pipeline</h3>
                 <div className="flex items-center gap-3 text-[11px] text-[var(--muted-foreground)]">
