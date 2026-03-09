@@ -619,6 +619,7 @@ fn default_config() -> CloakPipeConfig {
             ner: Default::default(),
             custom: Default::default(),
             overrides: Default::default(),
+            resolver: Default::default(),
         },
         tree: Default::default(),
         vectors: Default::default(),

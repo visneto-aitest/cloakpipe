@@ -49,6 +49,7 @@ impl IndustryProfile {
                 ner: NerConfig::default(),
                 custom: CustomConfig::default(),
                 overrides: OverrideConfig::default(),
+                resolver: Default::default(),
             },
             Self::Legal => DetectionConfig {
                 secrets: true,
@@ -79,6 +80,7 @@ impl IndustryProfile {
                     ],
                     force: Vec::new(),
                 },
+                resolver: Default::default(),
             },
             Self::Healthcare => DetectionConfig {
                 secrets: true,
@@ -110,6 +112,7 @@ impl IndustryProfile {
                     ],
                     force: Vec::new(),
                 },
+                resolver: Default::default(),
             },
             Self::Fintech => DetectionConfig {
                 secrets: true,
@@ -134,6 +137,7 @@ impl IndustryProfile {
                     ],
                     force: Vec::new(),
                 },
+                resolver: Default::default(),
             },
         }
     }

@@ -12,7 +12,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.5.0"
+version = "0.6.0"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/rohansx/cloakpipe"
@@ -38,6 +38,9 @@ toml = "0.8"
 aes-gcm = "0.10"
 zeroize = { version = "1", features = ["derive"] }
 rand = "0.8"
+
+# String similarity
+strsim = "0.11"
 
 # Pattern matching + NER
 regex = "1"

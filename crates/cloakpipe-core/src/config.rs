@@ -1,5 +1,6 @@
 //! Configuration types parsed from cloakpipe.toml.
 
+use crate::resolver::ResolverConfig;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -68,6 +69,8 @@ pub struct DetectionConfig {
     pub custom: CustomConfig,
     #[serde(default)]
     pub overrides: OverrideConfig,
+    #[serde(default)]
+    pub resolver: ResolverConfig,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]

@@ -339,6 +339,7 @@ mod tests {
             ner: Default::default(),
             custom: Default::default(),
             overrides: Default::default(),
+            resolver: Default::default(),
         };
         let detector = Detector::from_config(&config).unwrap();
         let vault = Vault::ephemeral();

@@ -6,7 +6,7 @@
 //! - Persistent across sessions for consistent pseudonymization
 //! - Atomic file writes (write to .tmp, rename)
 
-use crate::{EntityCategory, PseudoToken};
+use crate::{EntityCategory, PseudoToken, resolver::EntityResolver};
 use aes_gcm::{
     aead::{Aead, KeyInit, OsRng},
     Aes256Gcm, Nonce,
@@ -29,6 +29,8 @@ pub struct Vault {
     path: Option<String>,
     /// Encryption key (zeroized on drop)
     key: SensitiveBytes,
+    /// Optional fuzzy entity resolver for merging variant spellings
+    resolver: Option<EntityResolver>,
 }
 
 /// A string that is zeroized from memory when dropped.
@@ -86,6 +88,7 @@ impl Vault {
                 counters: HashMap::new(),
                 path: Some(path.to_string()),
                 key: SensitiveBytes(key),
+                resolver: None,
             })
         }
     }
@@ -100,15 +103,46 @@ impl Vault {
             counters: HashMap::new(),
             path: None,
             key: SensitiveBytes(key),
+            resolver: None,
         }
     }
 
+    /// Configure the fuzzy entity resolver on this vault.
+    pub fn set_resolver(&mut self, resolver: EntityResolver) {
+        self.resolver = Some(resolver);
+    }
+
     /// Get or create a pseudo-token for the given original value.
+    ///
+    /// If a fuzzy entity resolver is configured, checks for similar existing
+    /// entries before creating a new token. This merges variant spellings
+    /// (e.g., "Rishi" and "Rishikesh") to the same token.
     pub fn get_or_create(&mut self, original: &str, category: &EntityCategory) -> PseudoToken {
+        // 1. Exact match (existing behavior)
         if let Some(token) = self.forward.get(original) {
             return token.clone();
         }
 
+        // 2. Fuzzy match via resolver (if configured)
+        if let Some(ref resolver) = self.resolver {
+            // Build a category map of existing entries for the resolver
+            let existing: HashMap<String, EntityCategory> = self
+                .forward
+                .iter()
+                .map(|(k, v)| (k.clone(), v.category.clone()))
+                .collect();
+
+            if let Some(canonical) = resolver.resolve(original, category, &existing) {
+                if let Some(token) = self.forward.get(&canonical) {
+                    let token = token.clone();
+                    // Store this variant as an alias → same token
+                    self.forward.insert(original.to_string(), token.clone());
+                    return token;
+                }
+            }
+        }
+
+        // 3. No match — create new token
         let prefix = Self::category_prefix(category);
         let counter = self.counters.entry(prefix.clone()).or_insert(0);
         *counter += 1;
@@ -220,6 +254,7 @@ impl Vault {
             counters: data.counters,
             path: Some(path.to_string()),
             key: SensitiveBytes(key.to_vec()),
+            resolver: None,
         })
     }
 

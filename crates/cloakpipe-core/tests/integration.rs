@@ -21,6 +21,7 @@ fn test_detection_config() -> DetectionConfig {
         ner: NerConfig::default(),
         custom: CustomConfig::default(),
         overrides: OverrideConfig::default(),
+        resolver: Default::default(),
     }
 }
 
@@ -102,6 +103,7 @@ fn test_custom_pattern() {
             }],
         },
         overrides: OverrideConfig::default(),
+        resolver: Default::default(),
     };
     let detector = Detector::from_config(&config).unwrap();
     let entities = detector.detect("Working on Project Alpha").unwrap();
@@ -125,6 +127,7 @@ fn test_preserve_list() {
             preserve: vec!["public@example.com".into()],
             force: vec![],
         },
+        resolver: Default::default(),
     };
     let detector = Detector::from_config(&config).unwrap();
     let entities = detector
