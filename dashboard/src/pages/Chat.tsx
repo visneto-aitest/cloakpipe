@@ -18,9 +18,9 @@ const MODELS = [
   { id: 'claude-sonnet-4-20250514', label: 'Claude Sonnet', provider: 'anthropic' },
   { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash', provider: 'gemini' },
   { id: 'gemini-2.5-pro-preview-05-06', label: 'Gemini 2.5 Pro', provider: 'gemini' },
-  { id: 'glm-4-flash', label: 'GLM-4 Flash', provider: 'glm' },
-  { id: 'glm-4-air', label: 'GLM-4 Air', provider: 'glm' },
-  { id: 'glm-4-plus', label: 'GLM-4 Plus', provider: 'glm' },
+  { id: 'glm-4.5-flash', label: 'GLM-4.5 Flash', provider: 'glm' },
+  { id: 'glm-4.5', label: 'GLM-4.5', provider: 'glm' },
+  { id: 'glm-4.6', label: 'GLM-4.6', provider: 'glm' },
 ]
 
 const PROVIDER_ENDPOINTS: Record<string, string> = {
