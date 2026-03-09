@@ -384,6 +384,36 @@ cloakpipe mcp
 | **Contact** | Emails, phone numbers, IP addresses, internal URLs | `alice@acme.com`, `192.168.1.1` |
 | **Custom** | User-defined TOML patterns | Project codenames, client tiers, internal terms |
 | **NER** | Persons, organizations, locations | ONNX-based (optional, `--features ner`) |
+| **Fuzzy Resolution** | Variant spellings, misspellings, nicknames | `Rishikesh` = `Rishi` = `Rishiksh` (typo) |
+
+## Fuzzy Entity Resolution (v0.6)
+
+CloakPipe can merge variant spellings of the same entity into a single token:
+
+```
+Without resolver:
+  "Rishi"      → PERSON_1
+  "Rishikesh"  → PERSON_2    ← 2 tokens for same person
+  "Rishiksh"   → PERSON_3    ← typo = 3rd token
+
+With resolver:
+  "Rishi"      → PERSON_1
+  "Rishikesh"  → PERSON_1    ← same token (prefix match)
+  "Rishiksh"   → PERSON_1    ← same token (Jaro-Winkler 0.96)
+```
+
+Enable in config:
+```toml
+[detection.resolver]
+enabled = true
+threshold = 0.90       # Minimum similarity score (conservative)
+min_prefix_len = 4     # Minimum length for prefix matching
+
+[[detection.resolver.aliases]]
+group = ["Rishikesh Kumar", "Rishi", "Rishi kesh"]
+```
+
+Matching uses Jaro-Winkler similarity + prefix bonuses, only within the same entity category. "Rishikesh" (person) and "Rishikesh" (city) stay as separate tokens.
 
 ## How It Works
 
@@ -444,7 +474,7 @@ Request Flow:
 | v0.3 | ONNX NER, SQLite vault/audit, multi-user support | **Released** |
 | v0.4 | Distance-preserving vector encryption (ADCPE) | **Released** |
 | v0.5 | Industry profiles, MCP server for agentic integrations, guided setup wizard | **Released** |
-| v0.6 | Fully local mode with zero external API calls | Planned |
+| v0.6 | Fuzzy entity resolution — Jaro-Winkler matching, alias groups | **Released** |
 | v0.7 | TEE support (AWS Nitro Enclaves, Intel TDX) | Planned |
 
 ## Running Tests
@@ -453,7 +483,7 @@ Request Flow:
 cargo test
 ```
 
-57 tests covering vault encryption, multi-layer detection, pseudonymization roundtrips, streaming rehydration, SQLite vault/audit, ADCPE vector encryption, industry profiles, MCP server tools, and end-to-end proxy behavior.
+66 tests covering vault encryption, multi-layer detection, pseudonymization roundtrips, streaming rehydration, SQLite vault/audit, ADCPE vector encryption, industry profiles, MCP server tools, and end-to-end proxy behavior.
 
 ## Security
 
