@@ -9,6 +9,7 @@ import { Policies } from './pages/Policies'
 import { Settings } from './pages/Settings'
 import { KnowledgeBase } from './pages/KnowledgeBase'
 import { ChatInstances } from './pages/ChatInstances'
+import { Sessions } from './pages/Sessions'
 
 export default function App() {
   return (
@@ -23,6 +24,7 @@ export default function App() {
           <Route path="/detections" element={<DetectionFeed />} />
           <Route path="/compliance" element={<Compliance />} />
           <Route path="/policies" element={<Policies />} />
+          <Route path="/sessions" element={<Sessions />} />
           <Route path="/settings" element={<Settings />} />
         </Route>
         <Route path="*" element={<Navigate to="/" />} />

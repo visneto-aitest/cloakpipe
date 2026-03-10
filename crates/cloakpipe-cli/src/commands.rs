@@ -625,5 +625,111 @@ fn default_config() -> CloakPipeConfig {
         vectors: Default::default(),
         local: Default::default(),
         audit: Default::default(),
+        session: Default::default(),
     }
+}
+
+/// Session management commands — talks to the running proxy's HTTP API.
+pub async fn sessions(config_path: &str, action: crate::SessionCommands) -> Result<()> {
+    let config = if std::path::Path::new(config_path).exists() {
+        load_config(config_path)?
+    } else {
+        default_config()
+    };
+
+    let base = format!("http://{}", config.proxy.listen);
+    let client = reqwest::Client::new();
+
+    match action {
+        crate::SessionCommands::List => {
+            let resp = client
+                .get(format!("{}/sessions", base))
+                .send()
+                .await
+                .context("Cannot reach proxy — is it running?")?
+                .json::<serde_json::Value>()
+                .await?;
+
+            let sessions = resp.as_array().map(|a| a.len()).unwrap_or(0);
+            if sessions == 0 {
+                println!("No active sessions.");
+                println!("Sessions are created when requests include x-session-id header.");
+            } else {
+                println!("Active sessions ({}):\n", sessions);
+                for sess in resp.as_array().unwrap() {
+                    println!(
+                        "  {} | {} msgs | {} entities | sensitivity: {} | last: {}",
+                        sess["session_id"].as_str().unwrap_or("?"),
+                        sess["message_count"],
+                        sess["entity_count"],
+                        sess["sensitivity"].as_str().unwrap_or("normal"),
+                        sess["last_activity"].as_str().unwrap_or("?"),
+                    );
+                }
+            }
+        }
+
+        crate::SessionCommands::Inspect { session_id } => {
+            let resp = client
+                .get(format!("{}/sessions/{}", base, session_id))
+                .send()
+                .await
+                .context("Cannot reach proxy — is it running?")?;
+
+            if resp.status() == 404 {
+                bail!("Session {} not found", session_id);
+            }
+
+            let stats: serde_json::Value = resp.json().await?;
+            println!("Session: {}", session_id);
+            println!("  Messages:      {}", stats["message_count"]);
+            println!("  Entities:      {}", stats["entity_count"]);
+            println!("  Coreferences:  {}", stats["coreference_count"]);
+            println!("  Sensitivity:   {}", stats["sensitivity"].as_str().unwrap_or("normal"));
+            if let Some(keywords) = stats["escalation_keywords"].as_array() {
+                if !keywords.is_empty() {
+                    let kw: Vec<&str> = keywords.iter().filter_map(|k| k.as_str()).collect();
+                    println!("  Keywords:      {}", kw.join(", "));
+                }
+            }
+            if let Some(cats) = stats["categories"].as_object() {
+                println!("  Categories:");
+                for (cat, count) in cats {
+                    println!("    {}: {}", cat, count);
+                }
+            }
+            println!("  Created:       {}", stats["created_at"].as_str().unwrap_or("?"));
+            println!("  Last activity: {}", stats["last_activity"].as_str().unwrap_or("?"));
+        }
+
+        crate::SessionCommands::Flush { session_id } => {
+            let resp = client
+                .delete(format!("{}/sessions/{}", base, session_id))
+                .send()
+                .await
+                .context("Cannot reach proxy — is it running?")?
+                .json::<serde_json::Value>()
+                .await?;
+
+            if resp["flushed"].as_bool() == Some(true) {
+                println!("Session {} flushed.", session_id);
+            } else {
+                println!("Session {} not found.", session_id);
+            }
+        }
+
+        crate::SessionCommands::FlushAll => {
+            let resp = client
+                .delete(format!("{}/sessions", base))
+                .send()
+                .await
+                .context("Cannot reach proxy — is it running?")?
+                .json::<serde_json::Value>()
+                .await?;
+
+            println!("Flushed {} sessions.", resp["flushed"]);
+        }
+    }
+
+    Ok(())
 }

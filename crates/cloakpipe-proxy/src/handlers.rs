@@ -9,7 +9,7 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use cloakpipe_core::{replacer::Replacer, rehydrator::Rehydrator};
+use cloakpipe_core::{replacer::Replacer, rehydrator::Rehydrator, PseudoToken};
 use serde_json::Value;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -20,6 +20,20 @@ pub async fn health() -> impl IntoResponse {
         "status": "ok",
         "service": "cloakpipe"
     }))
+}
+
+/// Extract session ID from request headers based on config.
+fn extract_session_id(headers: &HeaderMap, id_from: &str) -> Option<String> {
+    if let Some(header_name) = id_from.strip_prefix("header:") {
+        headers
+            .get(header_name)
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string())
+    } else if id_from == "connection" {
+        Some(Uuid::new_v4().to_string())
+    } else {
+        None
+    }
 }
 
 /// Proxy handler for /v1/chat/completions.
@@ -35,8 +49,19 @@ pub async fn proxy_chat_completions(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    // Pseudonymize message contents
-    let entities_count = pseudonymize_messages(&state, &mut body, &request_id)
+    // Extract session ID if session tracking is enabled
+    let session_id = if state.sessions.is_enabled() {
+        let sid = extract_session_id(&headers, &state.config.session.id_from);
+        if let Some(ref id) = sid {
+            state.sessions.get_or_create(id);
+        }
+        sid
+    } else {
+        None
+    };
+
+    // Pseudonymize message contents (session-aware)
+    let entities_count = pseudonymize_messages(&state, &mut body, &request_id, session_id.as_deref())
         .await
         .map_err(|e| {
             tracing::error!(request_id = %request_id, "Pseudonymization failed: {}", e);
@@ -47,6 +72,7 @@ pub async fn proxy_chat_completions(
         request_id = %request_id,
         entities = entities_count,
         streaming = is_streaming,
+        session_id = ?session_id,
         "Forwarding pseudonymized request"
     );
 
@@ -63,7 +89,6 @@ pub async fn proxy_chat_completions(
         .header("Authorization", format!("Bearer {}", state.api_key))
         .json(&body);
 
-    // Forward select headers
     if let Some(org) = headers.get("openai-organization") {
         req = req.header("OpenAI-Organization", org);
     }
@@ -85,7 +110,6 @@ pub async fn proxy_chat_completions(
     }
 
     if is_streaming {
-        // SSE streaming rehydration
         let vault = state.vault.clone();
         let stream = streaming::rehydrate_stream(upstream_resp, vault, request_id.clone()).await;
 
@@ -97,7 +121,6 @@ pub async fn proxy_chat_completions(
             .body(Body::from_stream(stream))
             .unwrap())
     } else {
-        // Non-streaming: rehydrate full response
         let resp_text = upstream_resp.text().await.map_err(|e| {
             (StatusCode::BAD_GATEWAY, format!("Failed to read upstream response: {}", e))
         })?;
@@ -106,7 +129,6 @@ pub async fn proxy_chat_completions(
             (StatusCode::BAD_GATEWAY, format!("Invalid upstream JSON: {}", e))
         })?;
 
-        // Rehydrate assistant message content
         let vault = state.vault.lock().await;
         if let Some(choices) = resp_json.get_mut("choices").and_then(|c| c.as_array_mut()) {
             for choice in choices {
@@ -117,13 +139,8 @@ pub async fn proxy_chat_completions(
                     .map(|s| s.to_string())
                 {
                     if let Ok(rehydrated) = Rehydrator::rehydrate(&content, &vault) {
-                        choice["message"]["content"] =
-                            Value::String(rehydrated.text);
-
-                        let _ = state.audit.log_rehydrate(
-                            &request_id,
-                            rehydrated.rehydrated_count,
-                        );
+                        choice["message"]["content"] = Value::String(rehydrated.text);
+                        let _ = state.audit.log_rehydrate(&request_id, rehydrated.rehydrated_count);
                     }
                 }
             }
@@ -139,7 +156,6 @@ pub async fn proxy_chat_completions(
 }
 
 /// Proxy handler for /v1/embeddings.
-/// Pseudonymizes the input text(s), forwards to upstream, returns embeddings as-is.
 pub async fn proxy_embeddings(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -147,7 +163,6 @@ pub async fn proxy_embeddings(
 ) -> Result<Response, (StatusCode, String)> {
     let request_id = Uuid::new_v4().to_string();
 
-    // Pseudonymize embedding input(s)
     let entities_count = pseudonymize_embedding_input(&state, &mut body, &request_id)
         .await
         .map_err(|e| {
@@ -189,7 +204,6 @@ pub async fn proxy_embeddings(
         tracing::warn!(request_id = %request_id, status = %status, "Upstream error");
     }
 
-    // Embeddings are numerical vectors — no rehydration needed
     Ok(Response::builder()
         .status(StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::OK))
         .header("Content-Type", "application/json")
@@ -198,11 +212,49 @@ pub async fn proxy_embeddings(
         .unwrap())
 }
 
+// --- Session management endpoints ---
+
+pub async fn sessions_list(
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    Json(state.sessions.list_sessions())
+}
+
+pub async fn session_inspect(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(session_id): axum::extract::Path<String>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    state
+        .sessions
+        .inspect(&session_id)
+        .map(Json)
+        .ok_or((StatusCode::NOT_FOUND, format!("Session {} not found", session_id)))
+}
+
+pub async fn session_flush(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(session_id): axum::extract::Path<String>,
+) -> impl IntoResponse {
+    let flushed = state.sessions.flush_session(&session_id);
+    Json(serde_json::json!({ "flushed": flushed, "session_id": session_id }))
+}
+
+pub async fn sessions_flush_all(
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    let count = state.sessions.flush_all();
+    Json(serde_json::json!({ "flushed": count }))
+}
+
+// --- Internal pseudonymization helpers ---
+
 /// Pseudonymize all message contents in the request body.
+/// When session tracking is enabled, also resolves coreferences and checks sensitivity.
 async fn pseudonymize_messages(
     state: &AppState,
     body: &mut Value,
     request_id: &str,
+    session_id: Option<&str>,
 ) -> anyhow::Result<usize> {
     let mut total_entities = 0;
 
@@ -210,10 +262,65 @@ async fn pseudonymize_messages(
         let mut vault = state.vault.lock().await;
         for msg in messages {
             if let Some(content) = msg.get_mut("content").and_then(|c| c.as_str()).map(|s| s.to_string()) {
-                let entities = state.detector.detect(&content)?;
+                // Check sensitivity escalation before detection
+                if let Some(sid) = session_id {
+                    state.sessions.with_session(sid, |ctx| {
+                        if ctx.check_sensitivity(&content) {
+                            tracing::info!(
+                                session_id = sid,
+                                request_id = request_id,
+                                sensitivity = ?ctx.sensitivity,
+                                keywords = ?ctx.escalation_keywords,
+                                "Sensitivity escalated to elevated"
+                            );
+                        }
+                    });
+                }
+
+                // Standard detection
+                let mut entities = state.detector.detect(&content)?;
+
+                // Resolve coreferences from session context
+                let mut coref_tokens: Vec<(usize, PseudoToken)> = Vec::new();
+                if let Some(sid) = session_id {
+                    if let Some(coref_results) = state.sessions.with_session_ref(sid, |ctx| {
+                        ctx.resolve_coreferences(&content)
+                    }) {
+                        for (coref_entity, coref_token) in coref_results {
+                            let overlaps = entities.iter().any(|e| {
+                                coref_entity.start < e.end && coref_entity.end > e.start
+                            });
+                            if !overlaps {
+                                let idx = entities.len();
+                                entities.push(coref_entity);
+                                coref_tokens.push((idx, coref_token));
+                            }
+                        }
+                    }
+                }
+
                 if !entities.is_empty() {
+                    entities.sort_by_key(|e| e.start);
+
                     let result = Replacer::pseudonymize(&content, &entities, &mut vault)?;
                     msg["content"] = Value::String(result.text);
+
+                    // Collect tokens for session recording
+                    let mut tokens: Vec<PseudoToken> = Vec::new();
+                    for (i, e) in entities.iter().enumerate() {
+                        if let Some((_, ref token)) = coref_tokens.iter().find(|(idx, _)| *idx == i) {
+                            tokens.push(token.clone());
+                        } else {
+                            tokens.push(vault.get_or_create(&e.original, &e.category));
+                        }
+                    }
+
+                    // Record in session context
+                    if let Some(sid) = session_id {
+                        state.sessions.with_session(sid, |ctx| {
+                            ctx.record_entities(&entities, &tokens);
+                        });
+                    }
 
                     let categories: Vec<String> = entities
                         .iter()

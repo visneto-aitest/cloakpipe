@@ -9,6 +9,7 @@ use cloakpipe_core::{
     profiles::IndustryProfile,
     rehydrator::Rehydrator,
     replacer::Replacer,
+    session::SessionManager,
     vault::Vault,
 };
 use rmcp::{
@@ -27,6 +28,7 @@ pub struct CloakPipeServer {
     vault: Arc<Mutex<Vault>>,
     config: Arc<RwLock<DetectionConfig>>,
     active_profile: Arc<RwLock<Option<String>>>,
+    sessions: Arc<SessionManager>,
     tool_router: ToolRouter<Self>,
 }
 
@@ -92,6 +94,12 @@ struct EntityInfo {
 struct VaultStatsResult {
     total_mappings: usize,
     categories: std::collections::HashMap<String, u32>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct SessionContextParams {
+    /// Session ID to inspect, or "list" to list all active sessions.
+    pub session_id: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -253,6 +261,31 @@ impl CloakPipeServer {
 
         serde_json::to_string_pretty(&response).unwrap_or_else(|e| format!("Error: {}", e))
     }
+
+    /// Query session context: inspect a session's entities and coreferences, or list all active sessions.
+    #[tool(description = "Query session context for context-aware pseudonymization. Pass a session ID to inspect it, or 'list' to see all active sessions. Shows entities tracked, coreferences, sensitivity level, and escalation keywords.")]
+    async fn session_context(
+        &self,
+        Parameters(params): Parameters<SessionContextParams>,
+    ) -> String {
+        if params.session_id == "list" {
+            let sessions = self.sessions.list_sessions();
+            if sessions.is_empty() {
+                return r#"{"sessions": [], "note": "No active sessions. Sessions are created when requests include x-session-id header."}"#.to_string();
+            }
+            serde_json::to_string_pretty(&serde_json::json!({
+                "sessions": sessions,
+                "total": sessions.len(),
+            }))
+            .unwrap_or_else(|e| format!("Error: {}", e))
+        } else {
+            match self.sessions.inspect(&params.session_id) {
+                Some(stats) => serde_json::to_string_pretty(&stats)
+                    .unwrap_or_else(|e| format!("Error: {}", e)),
+                None => format!(r#"{{"error": "Session '{}' not found"}}"#, params.session_id),
+            }
+        }
+    }
 }
 
 fn apply_toggles(config: &mut DetectionConfig, categories: &[String], value: bool) {
@@ -289,11 +322,13 @@ impl CloakPipeServer {
     pub fn new(config: CloakPipeConfig, detector: Detector, vault: Vault) -> Self {
         let detection_config = config.detection.clone();
         let profile = config.profile.clone();
+        let sessions = Arc::new(SessionManager::new(config.session.clone()));
         Self {
             detector: Arc::new(RwLock::new(detector)),
             vault: Arc::new(Mutex::new(vault)),
             config: Arc::new(RwLock::new(detection_config)),
             active_profile: Arc::new(RwLock::new(profile)),
+            sessions,
             tool_router: Self::tool_router(),
         }
     }
@@ -349,6 +384,7 @@ mod tests {
             vault: Arc::new(Mutex::new(vault)),
             config: Arc::new(RwLock::new(config)),
             active_profile: Arc::new(RwLock::new(None)),
+            sessions: Arc::new(SessionManager::new(Default::default())),
             tool_router: CloakPipeServer::tool_router(),
         }
     }

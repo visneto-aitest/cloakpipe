@@ -1,6 +1,7 @@
 //! Configuration types parsed from cloakpipe.toml.
 
 use crate::resolver::ResolverConfig;
+use crate::session::SessionConfig;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -19,6 +20,8 @@ pub struct CloakPipeConfig {
     pub local: LocalConfig,
     #[serde(default)]
     pub audit: AuditConfig,
+    #[serde(default)]
+    pub session: SessionConfig,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

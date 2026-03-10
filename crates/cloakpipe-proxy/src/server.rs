@@ -19,6 +19,9 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/tree/query", post(tree_handlers::tree_query))
         .route("/tree/{id}", get(tree_handlers::tree_get).delete(tree_handlers::tree_delete))
         .route("/tree/{id}/search", post(tree_handlers::tree_search))
+        // Session management endpoints
+        .route("/sessions", get(handlers::sessions_list).delete(handlers::sessions_flush_all))
+        .route("/sessions/{id}", get(handlers::session_inspect).delete(handlers::session_flush))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state)

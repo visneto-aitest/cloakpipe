@@ -14,6 +14,7 @@ import {
   Moon,
   Database,
   Bot,
+  Users,
 } from 'lucide-react'
 import { useStatus } from '@powersync/react'
 import { useState, useEffect } from 'react'
@@ -27,6 +28,7 @@ const navItems = [
   { to: '/detections', icon: Eye, label: 'Detections' },
   { to: '/compliance', icon: FileCheck, label: 'Compliance' },
   { to: '/policies', icon: SlidersHorizontal, label: 'Policies' },
+  { to: '/sessions', icon: Users, label: 'Sessions' },
   { to: '/settings', icon: Settings, label: 'Settings' },
 ]
 
@@ -107,7 +109,7 @@ export function Layout() {
         </nav>
 
         <div className="px-5 py-3 border-t border-[var(--border)] flex items-center justify-between">
-          <span className="text-[11px] text-[var(--muted-foreground)] font-mono">v0.6.0</span>
+          <span className="text-[11px] text-[var(--muted-foreground)] font-mono">v0.7.0</span>
           <div className="flex items-center gap-2">
             <ThemeToggle />
             <SyncIndicator />

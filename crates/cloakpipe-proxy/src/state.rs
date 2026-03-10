@@ -1,7 +1,12 @@
 //! Shared application state for the proxy server.
 
 use cloakpipe_audit::AuditLogger;
-use cloakpipe_core::{config::CloakPipeConfig, detector::Detector, vault::Vault};
+use cloakpipe_core::{
+    config::CloakPipeConfig,
+    detector::Detector,
+    session::SessionManager,
+    vault::Vault,
+};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -13,6 +18,7 @@ pub struct AppState {
     pub audit: AuditLogger,
     pub http_client: reqwest::Client,
     pub api_key: String,
+    pub sessions: Arc<SessionManager>,
 }
 
 impl AppState {
@@ -28,6 +34,8 @@ impl AppState {
             .build()
             .expect("Failed to build HTTP client");
 
+        let sessions = Arc::new(SessionManager::new(config.session.clone()));
+
         Self {
             config,
             detector,
@@ -35,6 +43,7 @@ impl AppState {
             audit,
             http_client,
             api_key,
+            sessions,
         }
     }
 }

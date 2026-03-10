@@ -48,6 +48,11 @@ enum Commands {
         #[command(subcommand)]
         action: VectorCommands,
     },
+    /// Manage active sessions (context-aware pseudonymization)
+    Sessions {
+        #[command(subcommand)]
+        action: SessionCommands,
+    },
 }
 
 #[derive(Subcommand)]
@@ -81,6 +86,24 @@ pub enum TreeCommands {
         /// Path to the tree index JSON file
         index: String,
     },
+}
+
+#[derive(Subcommand)]
+pub enum SessionCommands {
+    /// List all active sessions
+    List,
+    /// Inspect a session's entity map and coreferences
+    Inspect {
+        /// Session ID to inspect
+        session_id: String,
+    },
+    /// Flush (delete) a specific session
+    Flush {
+        /// Session ID to flush
+        session_id: String,
+    },
+    /// Flush all sessions
+    FlushAll,
 }
 
 #[derive(Subcommand)]
@@ -133,5 +156,6 @@ async fn main() -> anyhow::Result<()> {
         Commands::Mcp => commands::mcp(&cli.config).await,
         Commands::Tree { action } => commands::tree(&cli.config, action).await,
         Commands::Vector { action } => commands::vector(action).await,
+        Commands::Sessions { action } => commands::sessions(&cli.config, action).await,
     }
 }
